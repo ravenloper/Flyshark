@@ -1,6 +1,6 @@
 streamlit
 pandas
-python-dotenv
 amadeus
 supabase
 gotrue
+matplotlib
