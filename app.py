@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from amadeus import Client, ResponseError
+from amadeus import Client as AmadeusClient, ResponseError
 from supabase import create_client, Client
 import datetime
 import matplotlib.pyplot as plt
@@ -27,7 +27,7 @@ key = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
 
 # Amadeus
-amadeus = Client(
+amadeus = AmadeusClient(
     client_id=st.secrets["AMADEUS_CLIENT_ID"],
     client_secret=st.secrets["AMADEUS_CLIENT_SECRET"]
 )
