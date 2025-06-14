@@ -8,3 +8,5 @@ font="sans serif"
 [server]
 maxUploadSize = 1000
 fileWatcherType = "poll"
+
+add streamlit config file
