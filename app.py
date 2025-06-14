@@ -34,7 +34,6 @@ amadeus = AmadeusClient(
 
 # ================= FUNÇÕES =================
 
-# Função: salvar no histórico
 def salvar_historico(origem, destino, data_ida, data_volta, companhia, classe, preco, status_termometro):
     data_consulta = datetime.datetime.now().isoformat()
 
@@ -52,12 +51,12 @@ def salvar_historico(origem, destino, data_ida, data_volta, companhia, classe, p
 
     supabase.table("historico_buscas").insert(data).execute()
 
-# Função: carregar histórico
+
 def carregar_historico():
     response = supabase.table("historico_buscas").select("*").execute()
     return pd.DataFrame(response.data)
 
-# Função: calcular termômetro
+
 def calcular_termometro(origem, destino, classe, preco_atual):
     df = carregar_historico()
     df = df[(df['origem'] == origem) & (df['destino'] == destino) & (df['classe'] == classe)]
@@ -75,7 +74,7 @@ def calcular_termometro(origem, destino, classe, preco_atual):
     else:
         return "🟡 Está na média"
 
-# Função: buscar passagens
+
 def buscar_passagens(origem, destino, data_ida, data_volta, classe, tipo):
     try:
         params = {
@@ -131,6 +130,15 @@ def buscar_passagens(origem, destino, data_ida, data_volta, classe, tipo):
         st.error(f"Ocorreu um erro na busca: {error}")
         return pd.DataFrame()
 
+
+def gerar_datas_no_intervalo(data_inicio, dias_range):
+    lista_datas = []
+    for i in range(dias_range + 1):
+        nova_data = data_inicio + datetime.timedelta(days=i)
+        lista_datas.append(nova_data)
+    return lista_datas
+
+
 # ================= SIDEBAR =================
 
 st.sidebar.header("Configurações da Busca")
@@ -166,8 +174,22 @@ preco_max = st.sidebar.number_input(
     value=6500
 )
 
+st.sidebar.subheader("🗓️ Intervalo de Datas")
+usar_range = st.sidebar.checkbox("Ativar busca por intervalo de datas")
+
+range_dias = 0
+if usar_range:
+    range_dias = st.sidebar.slider(
+        "Quantos dias de intervalo?",
+        min_value=1,
+        max_value=30,
+        value=7,
+        help="O sistema irá buscar voos a partir da data selecionada até o número de dias seguintes."
+    )
+
 st.sidebar.markdown("---")
 buscar = st.sidebar.button("🔍 Buscar")
+
 
 # ================= RESULTADO =================
 
@@ -180,22 +202,28 @@ if buscar:
 
         for destino in destinos:
             destino_codigo = destino.split(" ")[0]
-            df = buscar_passagens("GRU", destino_codigo, data_ida, data_volta, classe, tipo_viagem)
 
-            if not df.empty:
-                for index, row in df.iterrows():
-                    salvar_historico(
-                        origem=row["Origem"],
-                        destino=row["Destino"],
-                        data_ida=pd.to_datetime(row["Data Ida"]).date(),
-                        data_volta=pd.to_datetime(row["Data Volta"]).date() if row["Data Volta"] else None,
-                        companhia=row["Companhia"],
-                        classe=row["Classe"],
-                        preco=row["Preço (R$)"],
-                        status_termometro=row["Status"]
-                    )
+            datas_ida = [data_ida]
+            if usar_range:
+                datas_ida = gerar_datas_no_intervalo(data_ida, range_dias)
 
-            todas_passagens = pd.concat([todas_passagens, df], ignore_index=True)
+            for data in datas_ida:
+                df = buscar_passagens("GRU", destino_codigo, data, data_volta, classe, tipo_viagem)
+
+                if not df.empty:
+                    for index, row in df.iterrows():
+                        salvar_historico(
+                            origem=row["Origem"],
+                            destino=row["Destino"],
+                            data_ida=pd.to_datetime(row["Data Ida"]).date(),
+                            data_volta=pd.to_datetime(row["Data Volta"]).date() if row["Data Volta"] else None,
+                            companhia=row["Companhia"],
+                            classe=row["Classe"],
+                            preco=row["Preço (R$)"],
+                            status_termometro=row["Status"]
+                        )
+
+                todas_passagens = pd.concat([todas_passagens, df], ignore_index=True)
 
         if not todas_passagens.empty:
             st.dataframe(todas_passagens)
@@ -226,4 +254,4 @@ if buscar:
             st.warning("Nenhum resultado encontrado para os parâmetros selecionados.")
 
 st.markdown("---")
-st.caption("🦈 FlyShark — Radar de Passagens Inteligentes | V2 🚀")
+st.caption("🦈 FlyShark — Radar de Passagens Inteligentes | V3 🚀")
