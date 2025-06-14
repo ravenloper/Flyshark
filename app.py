@@ -182,7 +182,7 @@ if usar_range:
     range_dias = st.sidebar.slider(
         "Quantos dias de intervalo?",
         min_value=1,
-        max_value=30,
+        max_value=300,
         value=7,
         help="O sistema irá buscar voos a partir da data selecionada até o número de dias seguintes."
     )
