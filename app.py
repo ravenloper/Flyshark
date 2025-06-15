@@ -4,6 +4,7 @@ from amadeus import Client as AmadeusClient, ResponseError
 from supabase import create_client, Client
 import datetime
 import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
 
 # ================= CONFIGURAÇÕES =================
 st.set_page_config(
@@ -34,7 +35,6 @@ amadeus = AmadeusClient(
 
 def salvar_historico(origem, destino, data_ida, data_volta, companhia, classe, preco, status_termometro):
     data_consulta = datetime.datetime.now().isoformat()
-
     data = {
         "origem": origem,
         "destino": destino,
@@ -46,7 +46,6 @@ def salvar_historico(origem, destino, data_ida, data_volta, companhia, classe, p
         "data_consulta": data_consulta,
         "status_termometro": status_termometro
     }
-
     supabase.table("historico_buscas").insert(data).execute()
 
 
@@ -83,10 +82,8 @@ def buscar_passagens(origem, destino, data_ida, data_volta, classe, tipo):
             "currencyCode": "BRL",
             "max": 10,
         }
-
         if tipo == "Ida e Volta" and data_volta:
             params["returnDate"] = str(data_volta)
-
         if classe != "Ambas":
             params["travelClass"] = "ECONOMY" if classe == "Econômica" else "BUSINESS"
 
@@ -102,8 +99,6 @@ def buscar_passagens(origem, destino, data_ida, data_volta, classe, tipo):
             partida = ida['departure']['iataCode']
             chegada = ida['arrival']['iataCode']
             hora_partida = ida['departure']['at'][:10]
-
-            volta = None
             hora_volta = None
             if tipo == "Ida e Volta" and len(itineraries) > 1:
                 volta = itineraries[1]['segments'][0]
@@ -135,7 +130,6 @@ def gerar_datas_no_intervalo(data_inicio, dias_range):
 
 def buscar_tubarao(origem, destino, datas_ida, classe, preco_max, permanencia_min, permanencia_max):
     resultados = []
-
     for data_ida in datas_ida:
         df_ida = buscar_passagens(origem, destino, data_ida, None, classe, "Só Ida")
 
@@ -149,10 +143,8 @@ def buscar_tubarao(origem, destino, datas_ida, classe, preco_max, permanencia_mi
                         pd.to_datetime(row["Data Ida"]).date() + datetime.timedelta(days=permanencia_min),
                         permanencia_max - permanencia_min
                     )
-
                     for data_volta in datas_volta:
                         df_volta = buscar_passagens(destino, origem, data_volta, None, classe, "Só Volta")
-
                         if not df_volta.empty:
                             for _, row2 in df_volta.iterrows():
                                 resultados.append({
@@ -170,18 +162,24 @@ def buscar_tubarao(origem, destino, datas_ida, classe, preco_max, permanencia_mi
                                     "Status Volta": row2["Status"]
                                 })
     return pd.DataFrame(resultados)
-
-
 # ================= SIDEBAR =================
 
-st.sidebar.header("Configurações da Busca")
-st.sidebar.write("**Origem:** GRU (Guarulhos)")
+aba = st.sidebar.selectbox(
+    "Escolha a aba:",
+    ["🔍 Buscador de Passagens", "📊 Dashboard Histórico + Tendências"]
+)
+
+origem = st.sidebar.selectbox(
+    "**Origem:**",
+    ["GRU (Guarulhos)", "BSB (Brasília)", "GIG (Galeão)"]
+).split(" ")[0]
 
 destinos = st.sidebar.multiselect(
     "Selecione os destinos:",
     ["CDG (Paris)", "FCO (Roma)", "LHR (Londres)", "JFK (Nova York)", "MIA (Miami)", "YYZ (Toronto)",
      "MAD (Madrid)", "BCN (Barcelona)", "FRA (Frankfurt)", "AMS (Amsterdam)", "LAX (Los Angeles)", "SFO (San Francisco)",
-     "ORD (Chicago)", "DFW (Dallas)", "ATL (Atlanta)", "BOS (Boston)", "IAD (Washington)", "SEA (Seattle)", "DEN (Denver)", "LAS (Las Vegas)"],
+     "ORD (Chicago)", "DFW (Dallas)", "ATL (Atlanta)", "BOS (Boston)", "IAD (Washington)", "SEA (Seattle)", 
+     "DEN (Denver)", "LAS (Las Vegas)", "MCO (Orlando)", "FLL (Fort Lauderdale)", "BNA (Nashville)"],
     default=["CDG (Paris)", "JFK (Nova York)"]
 )
 
@@ -209,7 +207,6 @@ preco_max = st.sidebar.number_input(
 
 st.sidebar.subheader("🗓️ Intervalo de Datas")
 usar_range = st.sidebar.checkbox("Ativar busca por intervalo de datas")
-
 range_dias = 0
 if usar_range:
     range_dias = st.sidebar.slider(
@@ -221,7 +218,6 @@ if usar_range:
 
 st.sidebar.subheader("🦈 Modo Tubarão")
 modo_tubarao = st.sidebar.checkbox("Ativar Inteligência do Tubarão™")
-
 if modo_tubarao:
     permanencia_min = st.sidebar.slider(
         "Permanência mínima (dias)",
@@ -240,65 +236,135 @@ st.sidebar.markdown("---")
 buscar = st.sidebar.button("🔍 Buscar")
 
 
-# ================= RESULTADO =================
+# ================= BUSCADOR E DASHBOARD =================
 
-if buscar:
-    if not destinos:
-        st.warning("Selecione pelo menos um destino.")
-    else:
-        st.subheader("🦈 Resultados da Busca")
-        todas_passagens = pd.DataFrame()
+if aba == "🔍 Buscador de Passagens":
 
-        for destino in destinos:
-            destino_codigo = destino.split(" ")[0]
-            datas_ida = gerar_datas_no_intervalo(data_ida, range_dias) if usar_range else [data_ida]
-
-            if modo_tubarao:
-                df = buscar_tubarao(
-                    "GRU", destino_codigo,
-                    datas_ida=datas_ida,
-                    classe=classe,
-                    preco_max=preco_max,
-                    permanencia_min=permanencia_min,
-                    permanencia_max=permanencia_max
-                )
-            else:
-                df = pd.DataFrame()
-                for data in datas_ida:
-                    df_parcial = buscar_passagens("GRU", destino_codigo, data, data_volta, classe, tipo_viagem)
-                    df = pd.concat([df, df_parcial], ignore_index=True)
-
-            if not df.empty:
-                todas_passagens = pd.concat([todas_passagens, df], ignore_index=True)
-
-        if not todas_passagens.empty:
-            st.dataframe(todas_passagens)
-
-            csv = todas_passagens.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Baixar resultados em CSV",
-                data=csv,
-                file_name='resultados_flyshark.csv',
-                mime='text/csv',
-            )
-
-            # ========== GRÁFICO DE MENOR PREÇO ==========
-            st.subheader("📊 Menor preço por dia")
-
-            if "Data Ida" in todas_passagens.columns:
-                todas_passagens["Data Ida"] = pd.to_datetime(todas_passagens["Data Ida"])
-                menor_preco_por_dia = todas_passagens.groupby("Data Ida")["Preço (R$)" if "Preço (R$)" in todas_passagens.columns else "Preço Total (R$)"].min().reset_index()
-
-                plt.figure(figsize=(10, 5))
-                plt.bar(menor_preco_por_dia["Data Ida"].dt.strftime('%Y-%m-%d'), menor_preco_por_dia.iloc[:, 1])
-                plt.xticks(rotation=45)
-                plt.xlabel("Data")
-                plt.ylabel("Menor Preço (R$)")
-                plt.title("Menor preço encontrado por dia")
-                st.pyplot(plt)
-
+    if buscar:
+        if not destinos:
+            st.warning("Selecione pelo menos um destino.")
         else:
-            st.warning("Nenhum resultado encontrado para os parâmetros selecionados.")
+            st.subheader("🦈 Resultados da Busca")
+            todas_passagens = pd.DataFrame()
+
+            for destino in destinos:
+                destino_codigo = destino.split(" ")[0]
+                datas_ida = gerar_datas_no_intervalo(data_ida, range_dias) if usar_range else [data_ida]
+
+                if modo_tubarao:
+                    df = buscar_tubarao(
+                        origem, destino_codigo,
+                        datas_ida=datas_ida,
+                        classe=classe,
+                        preco_max=preco_max,
+                        permanencia_min=permanencia_min,
+                        permanencia_max=permanencia_max
+                    )
+                else:
+                    df = pd.DataFrame()
+                    for data in datas_ida:
+                        df_parcial = buscar_passagens(origem, destino_codigo, data, data_volta, classe, tipo_viagem)
+                        df = pd.concat([df, df_parcial], ignore_index=True)
+
+                if not df.empty:
+                    todas_passagens = pd.concat([todas_passagens, df], ignore_index=True)
+
+            if not todas_passagens.empty:
+                st.dataframe(todas_passagens)
+
+                csv = todas_passagens.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Baixar resultados em CSV",
+                    data=csv,
+                    file_name='resultados_flyshark.csv',
+                    mime='text/csv',
+                )
+
+                # ========== GRÁFICO DE MENOR PREÇO ==========
+                st.subheader("📊 Menor preço por dia")
+                if "Data Ida" in todas_passagens.columns:
+                    todas_passagens["Data Ida"] = pd.to_datetime(todas_passagens["Data Ida"])
+                    menor_preco_por_dia = todas_passagens.groupby("Data Ida")[
+                        "Preço (R$)" if "Preço (R$)" in todas_passagens.columns else "Preço Total (R$)"
+                    ].min().reset_index()
+
+                    plt.figure(figsize=(10, 5))
+                    plt.bar(menor_preco_por_dia["Data Ida"].dt.strftime('%Y-%m-%d'), menor_preco_por_dia.iloc[:, 1])
+                    plt.xticks(rotation=45)
+                    plt.xlabel("Data")
+                    plt.ylabel("Menor Preço (R$)")
+                    plt.title("Menor preço encontrado por dia")
+                    st.pyplot(plt)
+
+            else:
+                st.warning("Nenhum resultado encontrado para os parâmetros selecionados.")
+
+if aba == "📊 Dashboard Histórico + Tendências":
+    st.subheader("📊 Dashboard Histórico + Tendências de Preços")
+    st.markdown("Dados coletados pelo FlyShark nas suas buscas. Visualize o comportamento de preços e identifique oportunidades.")
+
+    df = carregar_historico()
+
+    if df.empty:
+        st.warning("O histórico está vazio. Realize buscas para começar a alimentar os dados.")
+    else:
+        df["data_ida"] = pd.to_datetime(df["data_ida"])
+        df["data_consulta"] = pd.to_datetime(df["data_consulta"])
+
+        st.markdown("### ✈️ Selecione a rota e classe")
+        rotas = df[["origem", "destino"]].drop_duplicates()
+        rotas["rota"] = rotas["origem"] + " → " + rotas["destino"]
+        rota_escolhida = st.selectbox("Rota:", rotas["rota"].unique())
+        classe_escolhida = st.selectbox("Classe:", df["classe"].unique())
+
+        origem_sel, destino_sel = rota_escolhida.split(" → ")
+
+        df_filtrado = df[
+            (df["origem"] == origem_sel) &
+            (df["destino"] == destino_sel) &
+            (df["classe"] == classe_escolhida)
+        ].copy()
+
+        if df_filtrado.empty:
+            st.warning("Não há dados suficientes para essa seleção.")
+        else:
+            df_filtrado = df_filtrado.sort_values("data_consulta")
+
+            st.markdown("### 📈 Histórico de Preços")
+            plt.figure(figsize=(10, 5))
+            plt.plot(df_filtrado["data_consulta"], df_filtrado["preco"], marker='o')
+            plt.xlabel("Data da Consulta")
+            plt.ylabel("Preço (R$)")
+            plt.title(f"Evolução dos Preços - {origem_sel} → {destino_sel} ({classe_escolhida})")
+            plt.grid(True)
+            st.pyplot(plt)
+
+            st.markdown("### 🔮 Tendência Estimada dos Preços")
+            df_filtrado["dias"] = (df_filtrado["data_consulta"] - df_filtrado["data_consulta"].min()).dt.days
+            X = df_filtrado["dias"].values.reshape(-1, 1)
+            y = df_filtrado["preco"].values.reshape(-1, 1)
+
+            modelo = LinearRegression()
+            modelo.fit(X, y)
+
+            previsao_dias = list(range(X.min(), X.max() + 30))
+            previsao_precos = modelo.predict([[d] for d in previsao_dias])
+
+            plt.figure(figsize=(10, 5))
+            plt.scatter(df_filtrado["data_consulta"], df_filtrado["preco"], color="blue", label="Dados históricos")
+            plt.plot(
+                [df_filtrado["data_consulta"].min() + datetime.timedelta(days=int(d)) for d in previsao_dias],
+                previsao_precos,
+                color="red",
+                linestyle="--",
+                label="Tendência futura"
+            )
+            plt.xlabel("Data")
+            plt.ylabel("Preço (R$)")
+            plt.title(f"Tendência de Preço - {origem_sel} → {destino_sel} ({classe_escolhida})")
+            plt.legend()
+            plt.grid(True)
+            st.pyplot(plt)
 
 st.markdown("---")
-st.caption("🦈 FlyShark — Radar de Passagens Inteligentes | V3 + Inteligência do Tubarão™ 🚀")
+st.caption("🦈 FlyShark — Radar de Passagens Inteligentes | V3 + Inteligência do Tubarão™ + Dashboard 🚀")
