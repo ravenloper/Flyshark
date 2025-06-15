@@ -51,7 +51,14 @@ def salvar_historico(origem, destino, data_ida, data_volta, companhia, classe, p
 
 def carregar_historico():
     response = supabase.table("historico_buscas").select("*").execute()
-    return pd.DataFrame(response.data)
+    dados = response.data
+
+    if not dados:
+        return pd.DataFrame(columns=[
+            "origem", "destino", "data_ida", "data_volta", "companhia",
+            "classe", "preco", "data_consulta", "status_termometro"
+        ])
+    return pd.DataFrame(dados)
 
 
 def calcular_termometro(origem, destino, classe, preco_atual):
