@@ -38,19 +38,20 @@ def salvar_historico(origem, destino, data_ida, data_volta, companhia, classe, p
     data_consulta = datetime.datetime.now().isoformat()
 
     data = {
-        "origem": origem,
-        "destino": destino,
-        "data_ida": data_ida.isoformat(),
+        "origem": origem or "",
+        "destino": destino or "",
+        "data_ida": data_ida.isoformat() if data_ida else None,
         "data_volta": data_volta.isoformat() if data_volta else None,
-        "companhia": companhia,
-        "classe": classe,
-        "preco": preco,
+        "companhia": companhia or "",
+        "classe": classe or "",
+        "preco": preco if preco is not None else 0,
         "data_consulta": data_consulta,
-        "status_termometro": status_termometro,
-        "conexoes": conexoes,
-        "duracao_voo": duracao_voo
+        "status_termometro": status_termometro or "",
+        "conexoes": conexoes if conexoes is not None else 0,
+        "duracao_voo": duracao_voo or ""
     }
 
+    st.write(data)  # 👈 Debug opcional
     supabase.table("historico_buscas").insert(data).execute()
 
 
