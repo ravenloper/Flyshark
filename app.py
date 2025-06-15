@@ -61,7 +61,7 @@ def carregar_historico():
     if not dados:
         return pd.DataFrame(columns=[
             "origem", "destino", "data_ida", "data_volta", "companhia",
-            "classe", "preco", "data_consulta", "status_termometro"
+            "classe", "preco", "data_consulta", "status_termometro", "conexoes", "duracao_voo"
         ])
     return pd.DataFrame(dados)
 
@@ -149,8 +149,6 @@ def buscar_passagens(origem, destino, data_ida, data_volta, classe, tipo):
     except ResponseError as error:
         st.error(f"Ocorreu um erro na busca: {error}")
         return pd.DataFrame()
-
-
 # ================= SIDEBAR =================
 
 st.sidebar.header("Configurações da Busca")
@@ -216,6 +214,7 @@ filtro_conexoes = st.sidebar.selectbox(
 st.sidebar.markdown("---")
 buscar = st.sidebar.button("🔍 Buscar")
 
+
 # ================= BUSCADOR E DASHBOARD =================
 
 if aba == "🔍 Buscador de Passagens":
@@ -244,7 +243,9 @@ if aba == "🔍 Buscador de Passagens":
                                 companhia=row["Companhia"],
                                 classe=row["Classe"],
                                 preco=row["Preço (R$)"],
-                                status_termometro=row["Status"]
+                                status_termometro=row["Status"],
+                                conexoes=row["Conexões"],
+                                duracao_voo=row["Duração Voo"]
                             )
                         todas_passagens = pd.concat([todas_passagens, df_parcial], ignore_index=True)
 
@@ -353,4 +354,4 @@ if aba == "📊 Dashboard Histórico + Tendências":
 
 
 st.markdown("---")
-st.caption("🦈 FlyShark — Radar de Passagens Inteligentes | V4 🚀")
+st.caption("🦈 FlyShark — Radar de Passagens Inteligentes | V4 Final 🚀")
