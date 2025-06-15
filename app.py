@@ -34,8 +34,9 @@ amadeus = AmadeusClient(
 
 
 # ================= FUNÇÕES =================
-def salvar_historico(origem, destino, data_ida, data_volta, companhia, classe, preco, status_termometro):
+def salvar_historico(origem, destino, data_ida, data_volta, companhia, classe, preco, status_termometro, conexoes, duracao_voo):
     data_consulta = datetime.datetime.now().isoformat()
+
     data = {
         "origem": origem,
         "destino": destino,
@@ -45,8 +46,11 @@ def salvar_historico(origem, destino, data_ida, data_volta, companhia, classe, p
         "classe": classe,
         "preco": preco,
         "data_consulta": data_consulta,
-        "status_termometro": status_termometro
+        "status_termometro": status_termometro,
+        "conexoes": conexoes,
+        "duracao_voo": duracao_voo
     }
+
     supabase.table("historico_buscas").insert(data).execute()
 
 
