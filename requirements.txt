@@ -4,3 +4,4 @@ amadeus
 supabase
 gotrue
 matplotlib
+scikit-learn
