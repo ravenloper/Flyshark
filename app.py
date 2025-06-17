@@ -6,7 +6,6 @@ import datetime
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 
-
 # ================= CONFIGURAÇÕES =================
 st.set_page_config(
     page_title="FlyShark - Radar de Passagens Inteligentes",
@@ -35,7 +34,27 @@ amadeus = AmadeusClient(
     client_id=st.secrets["AMADEUS_CLIENT_ID"],
     client_secret=st.secrets["AMADEUS_CLIENT_SECRET"]
 )
-def salvar_historico(origem, destino, data_ida, data_volta, companhia, classe, preco, status_termometro, conexoes, duracao_voo):
+
+companhias = {
+    "LA": "LATAM Airlines",
+    "AA": "American Airlines",
+    "UA": "United Airlines",
+    "DL": "Delta Airlines",
+    "AF": "Air France",
+    "LH": "Lufthansa",
+    "BA": "British Airways",
+    "AZ": "ITA Airways",
+    "KL": "KLM Royal Dutch",
+    "IB": "Iberia",
+    "TP": "TAP Portugal",
+    "CM": "Copa Airlines",
+    "G3": "Gol Linhas Aéreas",
+    "AD": "Azul Linhas Aéreas",
+}
+
+# ================= FUNÇÕES =================
+
+def salvar_historico(origem, destino, data_ida, data_volta, companhia, classe, preco, status_termometro, conexoes, duracao_voo, itinerario):
     data_consulta = datetime.datetime.now().isoformat()
 
     data = {
@@ -49,7 +68,8 @@ def salvar_historico(origem, destino, data_ida, data_volta, companhia, classe, p
         "data_consulta": data_consulta,
         "status_termometro": status_termometro or "",
         "conexoes": int(conexoes) if conexoes is not None else 0,
-        "duracao_voo": duracao_voo or ""
+        "duracao_voo": duracao_voo or "",
+        "itinerario": itinerario or ""
     }
 
     try:
@@ -63,17 +83,18 @@ def carregar_historico():
     try:
         response = supabase.table("historico_buscas").select("*").execute()
         dados = response.data
-
         if not dados:
             return pd.DataFrame(columns=[
                 "origem", "destino", "data_ida", "data_volta", "companhia",
-                "classe", "preco", "data_consulta", "status_termometro", "conexoes", "duracao_voo"
+                "classe", "preco", "data_consulta", "status_termometro", "conexoes",
+                "duracao_voo", "itinerario"
             ])
         return pd.DataFrame(dados)
-
     except Exception as e:
         st.error(f"Erro ao carregar histórico: {e}")
         return pd.DataFrame()
+
+
 def calcular_termometro(origem, destino, classe, preco_atual):
     df = carregar_historico()
     df = df[(df['origem'] == origem) & (df['destino'] == destino) & (df['classe'] == classe)]
@@ -122,7 +143,8 @@ def buscar_passagens(origem, destino, data_ida, data_volta, classe, tipo):
             partida = ida[0]['departure']['iataCode']
             chegada = ida[-1]['arrival']['iataCode']
             hora_partida = ida[0]['departure']['at'][:10]
-            hora_volta = None
+            hora_saida = ida[0]['departure']['at'][11:16]
+            hora_chegada = ida[-1]['arrival']['at'][11:16]
 
             qtd_conexoes = len(ida) - 1
 
@@ -133,17 +155,30 @@ def buscar_passagens(origem, destino, data_ida, data_volta, classe, tipo):
             minutos = (duracao.seconds % 3600) // 60
             duracao_formatada = f"{duracao.days * 24 + horas}h{minutos:02d}min"
 
+            itinerario_list = [segment['departure']['iataCode'] for segment in ida]
+            itinerario_list.append(ida[-1]['arrival']['iataCode'])
+            itinerario = ' → '.join(itinerario_list)
+
+            volta = None
+            hora_volta = None
             if tipo == "Ida e Volta" and len(itineraries) > 1:
                 volta = itineraries[1]['segments']
                 hora_volta = volta[-1]['arrival']['at'][:10]
+
+            companhia_codigo = ida[0]['carrierCode']
+            companhia_nome = companhias.get(companhia_codigo, companhia_codigo)
 
             status = calcular_termometro(partida, chegada, classe, price)
 
             resultados.append({
                 "Origem": partida,
                 "Destino": chegada,
-                "Companhia": ida[0]['carrierCode'],
+                "Companhia": companhia_nome,
+                "Código Companhia": companhia_codigo,
                 "Data Ida": hora_partida,
+                "Hora Saída": hora_saida,
+                "Hora Chegada": hora_chegada,
+                "Itinerário": itinerario,
                 "Data Volta": hora_volta,
                 "Classe": classe,
                 "Preço (R$)": price,
@@ -168,14 +203,14 @@ aba = st.sidebar.selectbox(
 
 origem = st.sidebar.selectbox(
     "**Origem:**",
-    ["GRU (Guarulhos)", "BSB (Brasília)", "GIG (Galeão)"]
+    ["GRU (Guarulhos)", "BSB (Brasília)", "GIG (Galeão)", "VCP (Viracopos)"]
 ).split(" ")[0]
 
 destinos = st.sidebar.multiselect(
     "Selecione os destinos:",
     ["CDG (Paris)", "FCO (Roma)", "LHR (Londres)", "JFK (Nova York)", "MIA (Miami)", "YYZ (Toronto)",
      "MAD (Madrid)", "BCN (Barcelona)", "FRA (Frankfurt)", "AMS (Amsterdam)", "LAX (Los Angeles)", "SFO (San Francisco)",
-     "ORD (Chicago)", "DFW (Dallas)", "ATL (Atlanta)", "BOS (Boston)", "IAD (Washington)", "SEA (Seattle)", 
+     "ORD (Chicago)", "DFW (Dallas)", "ATL (Atlanta)", "BOS (Boston)", "IAD (Washington)", "SEA (Seattle)",
      "DEN (Denver)", "LAS (Las Vegas)", "MCO (Orlando)", "FLL (Fort Lauderdale)", "BNA (Nashville)"],
     default=["CDG (Paris)", "JFK (Nova York)"]
 )
@@ -226,7 +261,6 @@ buscar = st.sidebar.button("🔍 Buscar")
 # ================= BUSCADOR =================
 
 if aba == "🔍 Buscador de Passagens":
-
     if buscar:
         if not destinos:
             st.warning("Selecione pelo menos um destino.")
@@ -253,11 +287,11 @@ if aba == "🔍 Buscador de Passagens":
                                 preco=row["Preço (R$)"],
                                 status_termometro=row["Status"],
                                 conexoes=row["Conexões"],
-                                duracao_voo=row["Duração Voo"]
+                                duracao_voo=row["Duração Voo"],
+                                itinerario=row["Itinerário"]
                             )
                         todas_passagens = pd.concat([todas_passagens, df_parcial], ignore_index=True)
 
-            # 🔍 Filtro de conexões no resultado
             if filtro_conexoes != "Sem filtro" and not todas_passagens.empty:
                 limite = {"Voo Direto": 0, "Até 1 conexão": 1, "Até 2 conexões": 2, "Até 3 conexões": 3}[filtro_conexoes]
                 todas_passagens = todas_passagens[todas_passagens["Conexões"] <= limite]
@@ -273,7 +307,6 @@ if aba == "🔍 Buscador de Passagens":
                     mime='text/csv',
                 )
 
-                # ========== GRÁFICO DE MENOR PREÇO ==========
                 st.subheader("📊 Menor preço por dia")
                 if "Data Ida" in todas_passagens.columns:
                     todas_passagens["Data Ida"] = pd.to_datetime(todas_passagens["Data Ida"])
@@ -291,6 +324,8 @@ if aba == "🔍 Buscador de Passagens":
 
             else:
                 st.warning("Nenhum resultado encontrado para os parâmetros selecionados.")
+
+
 # ================= DASHBOARD HISTÓRICO + TENDÊNCIAS =================
 
 if aba == "📊 Dashboard Histórico + Tendências":
@@ -301,7 +336,6 @@ if aba == "📊 Dashboard Histórico + Tendências":
     if df.empty:
         st.info("O histórico ainda está vazio. Realize algumas buscas para gerar dados.")
     else:
-        # Conversões e limpeza
         df["data_ida"] = pd.to_datetime(df["data_ida"])
         df["data_consulta"] = pd.to_datetime(df["data_consulta"])
         df["preco"] = df["preco"].astype(float)
@@ -332,7 +366,6 @@ if aba == "📊 Dashboard Histórico + Tendências":
         if df_filtrado.empty:
             st.warning("Não há dados suficientes para esse filtro.")
         else:
-            # ================= GRÁFICO DE TENDÊNCIA =================
             dados = df_filtrado.groupby("data_ida")["preco"].mean().reset_index()
             dados["data_ida_ordinal"] = dados["data_ida"].map(datetime.datetime.toordinal)
 
