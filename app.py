@@ -17,7 +17,11 @@ st.set_page_config(
 APP_NAME = "FlyShark"
 LOGO_PATH = "assets/logo_flyshark.png"
 
-st.image(LOGO_PATH, width=150)
+try:
+    st.image(LOGO_PATH, width=150)
+except Exception:
+    st.warning("Logo não encontrada. Verifique se está em /assets/logo_flyshark.png")
+
 st.title(f"{APP_NAME} 🦈✈️")
 st.subheader("Radar de Passagens Inteligentes — Voe como Tubarão, pague como Sardinha.")
 st.markdown("---")
@@ -31,9 +35,6 @@ amadeus = AmadeusClient(
     client_id=st.secrets["AMADEUS_CLIENT_ID"],
     client_secret=st.secrets["AMADEUS_CLIENT_SECRET"]
 )
-
-
-# ================= FUNÇÕES =================
 def salvar_historico(origem, destino, data_ida, data_volta, companhia, classe, preco, status_termometro, conexoes, duracao_voo):
     data_consulta = datetime.datetime.now().isoformat()
 
@@ -44,29 +45,35 @@ def salvar_historico(origem, destino, data_ida, data_volta, companhia, classe, p
         "data_volta": data_volta.isoformat() if data_volta else None,
         "companhia": companhia or "",
         "classe": classe or "",
-        "preco": preco if preco is not None else 0,
+        "preco": float(preco) if preco is not None else 0,
         "data_consulta": data_consulta,
         "status_termometro": status_termometro or "",
-        "conexoes": conexoes if conexoes is not None else 0,
+        "conexoes": int(conexoes) if conexoes is not None else 0,
         "duracao_voo": duracao_voo or ""
     }
 
-    st.write(data)  # 👈 Debug opcional
-    supabase.table("historico_buscas").insert(data).execute()
+    try:
+        supabase.table("historico_buscas").insert(data).execute()
+    except Exception as e:
+        st.error(f"Erro ao salvar no histórico: {e}")
+        st.write("Dados:", data)
 
 
 def carregar_historico():
-    response = supabase.table("historico_buscas").select("*").execute()
-    dados = response.data
+    try:
+        response = supabase.table("historico_buscas").select("*").execute()
+        dados = response.data
 
-    if not dados:
-        return pd.DataFrame(columns=[
-            "origem", "destino", "data_ida", "data_volta", "companhia",
-            "classe", "preco", "data_consulta", "status_termometro", "conexoes", "duracao_voo"
-        ])
-    return pd.DataFrame(dados)
+        if not dados:
+            return pd.DataFrame(columns=[
+                "origem", "destino", "data_ida", "data_volta", "companhia",
+                "classe", "preco", "data_consulta", "status_termometro", "conexoes", "duracao_voo"
+            ])
+        return pd.DataFrame(dados)
 
-
+    except Exception as e:
+        st.error(f"Erro ao carregar histórico: {e}")
+        return pd.DataFrame()
 def calcular_termometro(origem, destino, classe, preco_atual):
     df = carregar_historico()
     df = df[(df['origem'] == origem) & (df['destino'] == destino) & (df['classe'] == classe)]
@@ -216,7 +223,7 @@ st.sidebar.markdown("---")
 buscar = st.sidebar.button("🔍 Buscar")
 
 
-# ================= BUSCADOR E DASHBOARD =================
+# ================= BUSCADOR =================
 
 if aba == "🔍 Buscador de Passagens":
 
@@ -279,80 +286,85 @@ if aba == "🔍 Buscador de Passagens":
                     plt.xlabel("Data")
                     plt.ylabel("Menor Preço (R$)")
                     plt.title("Menor preço encontrado por dia")
+                    plt.grid(True)
                     st.pyplot(plt)
 
             else:
                 st.warning("Nenhum resultado encontrado para os parâmetros selecionados.")
-
-# ================= DASHBOARD =================
+# ================= DASHBOARD HISTÓRICO + TENDÊNCIAS =================
 
 if aba == "📊 Dashboard Histórico + Tendências":
-    st.subheader("📊 Dashboard Histórico + Tendências de Preços")
-    st.markdown("Visualize o comportamento dos preços e identifique oportunidades.")
+    st.subheader("📈 Histórico de Preços + Tendências")
 
     df = carregar_historico()
 
     if df.empty:
-        st.warning("O histórico está vazio. Realize buscas para começar a alimentar os dados.")
+        st.info("O histórico ainda está vazio. Realize algumas buscas para gerar dados.")
     else:
+        # Conversões e limpeza
         df["data_ida"] = pd.to_datetime(df["data_ida"])
         df["data_consulta"] = pd.to_datetime(df["data_consulta"])
+        df["preco"] = df["preco"].astype(float)
 
-        st.markdown("### ✈️ Selecione a rota e classe")
-        rotas = df[["origem", "destino"]].drop_duplicates()
-        rotas["rota"] = rotas["origem"] + " → " + rotas["destino"]
-        rota_escolhida = st.selectbox("Rota:", rotas["rota"].unique())
-        classe_escolhida = st.selectbox("Classe:", df["classe"].unique())
+        destinos_disponiveis = df["destino"].unique().tolist()
+        origens_disponiveis = df["origem"].unique().tolist()
 
-        origem_sel, destino_sel = rota_escolhida.split(" → ")
+        col1, col2 = st.columns(2)
+        with col1:
+            origem_filtro = st.selectbox("Origem", origens_disponiveis)
+        with col2:
+            destino_filtro = st.selectbox("Destino", destinos_disponiveis)
+
+        classe_filtro = st.radio(
+            "Classe",
+            ["Executiva", "Econômica", "Ambas"],
+            horizontal=True
+        )
 
         df_filtrado = df[
-            (df["origem"] == origem_sel) &
-            (df["destino"] == destino_sel) &
-            (df["classe"] == classe_escolhida)
-        ].copy()
+            (df["origem"] == origem_filtro) &
+            (df["destino"] == destino_filtro)
+        ]
+
+        if classe_filtro != "Ambas":
+            df_filtrado = df_filtrado[df_filtrado["classe"] == classe_filtro]
 
         if df_filtrado.empty:
-            st.warning("Não há dados suficientes para essa seleção.")
+            st.warning("Não há dados suficientes para esse filtro.")
         else:
-            df_filtrado = df_filtrado.sort_values("data_consulta")
+            # ================= GRÁFICO DE TENDÊNCIA =================
+            dados = df_filtrado.groupby("data_ida")["preco"].mean().reset_index()
+            dados["data_ida_ordinal"] = dados["data_ida"].map(datetime.datetime.toordinal)
 
-            st.markdown("### 📈 Histórico de Preços")
-            plt.figure(figsize=(10, 5))
-            plt.plot(df_filtrado["data_consulta"], df_filtrado["preco"], marker='o')
-            plt.xlabel("Data da Consulta")
-            plt.ylabel("Preço (R$)")
-            plt.title(f"Evolução dos Preços - {origem_sel} → {destino_sel} ({classe_escolhida})")
-            plt.grid(True)
-            st.pyplot(plt)
-
-            st.markdown("### 🔮 Tendência Estimada dos Preços")
-            df_filtrado["dias"] = (df_filtrado["data_consulta"] - df_filtrado["data_consulta"].min()).dt.days
-            X = df_filtrado["dias"].values.reshape(-1, 1)
-            y = df_filtrado["preco"].values.reshape(-1, 1)
+            X = dados[["data_ida_ordinal"]]
+            y = dados["preco"]
 
             modelo = LinearRegression()
             modelo.fit(X, y)
-
-            previsao_dias = list(range(X.min(), X.max() + 30))
-            previsao_precos = modelo.predict([[d] for d in previsao_dias])
+            dados["tendencia"] = modelo.predict(X)
 
             plt.figure(figsize=(10, 5))
-            plt.scatter(df_filtrado["data_consulta"], df_filtrado["preco"], color="blue", label="Dados históricos")
-            plt.plot(
-                [df_filtrado["data_consulta"].min() + datetime.timedelta(days=int(d)) for d in previsao_dias],
-                previsao_precos,
-                color="red",
-                linestyle="--",
-                label="Tendência futura"
-            )
-            plt.xlabel("Data")
+            plt.plot(dados["data_ida"], dados["preco"], marker='o', label='Preço Médio')
+            plt.plot(dados["data_ida"], dados["tendencia"], color='red', linestyle='--', label='Tendência')
+            plt.xlabel("Data de Ida")
             plt.ylabel("Preço (R$)")
-            plt.title(f"Tendência de Preço - {origem_sel} → {destino_sel} ({classe_escolhida})")
+            plt.title(f"Tendência de preços: {origem_filtro} → {destino_filtro} ({classe_filtro})")
             plt.legend()
             plt.grid(True)
+            plt.xticks(rotation=45)
             st.pyplot(plt)
 
+            st.subheader("📄 Dados do Histórico")
+            st.dataframe(df_filtrado)
 
+            csv = df_filtrado.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Baixar histórico em CSV",
+                data=csv,
+                file_name='historico_flyshark.csv',
+                mime='text/csv',
+            )
+
+# ================= FOOTER =================
 st.markdown("---")
-st.caption("🦈 FlyShark — Radar de Passagens Inteligentes | V4 Final 🚀")
+st.caption("🦈 FlyShark — Radar de Passagens Inteligentes | V4 — powered by Fernando Tessaro 🚀")
